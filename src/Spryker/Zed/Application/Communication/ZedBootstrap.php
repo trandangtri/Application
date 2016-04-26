@@ -9,6 +9,7 @@ namespace Spryker\Zed\Application\Communication;
 
 use Spryker\Shared\Application\ApplicationConstants;
 use Spryker\Shared\Application\Communication\Application;
+use Spryker\Shared\Auth\AuthConstants;
 use Spryker\Shared\Config\Config;
 use Spryker\Shared\Kernel\Store;
 use Spryker\Shared\Library\DataDirectory;
@@ -41,6 +42,7 @@ class ZedBootstrap
     {
         $this->application['debug'] = Config::get(ApplicationConstants::ENABLE_APPLICATION_DEBUG, false);
         $this->application['locale'] = Store::getInstance()->getCurrentLocale();
+        $authenticationType = Config::get(ApplicationConstants::APPLICATION_AUTH_TYPE);
 
         if (Config::get(ApplicationConstants::ENABLE_WEB_PROFILER, false)) {
             $this->application['profiler.cache_dir'] = DataDirectory::getLocalStoreSpecificPath('cache/profiler');
@@ -48,9 +50,15 @@ class ZedBootstrap
 
         $this->optimizeApp();
         $this->enableHttpMethodParameterOverride();
-        $this->registerServiceProvider();
 
-        $this->addVariablesToTwig();
+        if ($authenticationType !== 0 || !$this->isInternalRequest()) {
+            $this->registerServiceProvider();
+            $this->addVariablesToTwig();
+
+            return $this->application;
+        }
+
+        $this->registerServiceProviderForInternalRequest();
 
         return $this->application;
     }
@@ -66,9 +74,27 @@ class ZedBootstrap
     }
 
     /**
+     * @return void
+     */
+    protected function registerServiceProviderForInternalRequest()
+    {
+        foreach ($this->getInternalCallServiceProvider() as $provider) {
+            $this->application->register($provider);
+        }
+    }
+
+    /**
      * @return \Silex\ServiceProviderInterface[]
      */
     protected function getServiceProvider()
+    {
+        return [];
+    }
+
+    /**
+     * @return \Silex\ServiceProviderInterface[]
+     */
+    protected function getInternalCallServiceProvider()
     {
         return [];
     }
@@ -150,6 +176,14 @@ class ZedBootstrap
         $dependencyProvider->provideBusinessLayerDependencies($container);
         $dependencyProvider->provideCommunicationLayerDependencies($container);
         $dependencyProvider->providePersistenceLayerDependencies($container);
+    }
+
+    /**
+     * @return bool
+     */
+    protected function isInternalRequest()
+    {
+        return array_key_exists('HTTP_X_INTERNAL_REQUEST', $_SERVER);
     }
 
 }
